@@ -11,7 +11,7 @@ BASE_ANALYSIS = "https://datosabiertos.compraspublicas.gob.ec/PLATAFORMA/api/sea
 
 st.set_page_config(page_title="EDA Compras Públicas - Nombres Apellidos", layout="wide")
 
-st.title("EDA: Compras Públicas (API) — Nombres Apellidos")
+st.title("EDA: Compras Públicas (API) — Maura Calle")
 
 # ---------- Helpers ----------
 def safe_get_json(url, params=None, timeout=30):
@@ -256,3 +256,4 @@ st.markdown("""
 - Si observas picos anómalos en la serie temporal, investiga los `ocid` asociados.  
 - Las correlaciones reportadas son exploratorias; para afirmaciones causales requerirías más análisis y control de variables.
 """)
+
