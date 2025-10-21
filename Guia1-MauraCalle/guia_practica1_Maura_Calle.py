@@ -9,7 +9,7 @@ from scipy.stats import linregress, pearsonr, spearmanr
 
 BASE_ANALYSIS = "https://datosabiertos.compraspublicas.gob.ec/PLATAFORMA/api/search_ocds"
 
-st.set_page_config(page_title="EDA Compras Públicas - Nombres Apellidos", layout="wide")
+st.set_page_config(page_title="EDA Compras Públicas - Maura Calle", layout="wide")
 
 st.title("EDA: Compras Públicas (API) — Maura Calle")
 
@@ -21,7 +21,6 @@ def safe_get_json(url, params=None, timeout=30):
 
 def extract_record_to_flat_dict(rec):
     out = {}
-    # keys search
     def deep_search(o, keyset):
         if o is None:
             return None
@@ -122,29 +121,29 @@ else:
 # ---------- Normalización ----------
 def normalize_df(df):
     df = df.copy()
-    if 'date' in df.columns:
-        df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    else:
-        if 'year' in df.columns and 'month' in df.columns:
-            df['date'] = pd.to_datetime(df['year'].astype(str) + '-' + df['month'].astype(str) + '-01', errors='coerce')
+    
+    if 'date' not in df.columns:
+        if 'year_requested' in df.columns:
+            df['date'] = pd.to_datetime(df['year_requested'].astype(str) + '-01-01', errors='coerce')
+        else:
+            df['date'] = pd.NaT
+    
+    df['year'] = df['date'].dt.year
+    df['month'] = df['date'].dt.month
+    df['year_month'] = df['date'].dt.to_period('M').astype(str) if 'date' in df.columns else None
+
     if 'total' in df.columns:
-        df['total'] = df['total'].astype(str).str.replace(r'[^\d\.\-]', '', regex=True)
-        df['total'] = pd.to_numeric(df['total'], errors='coerce')
+        df['total'] = pd.to_numeric(df['total'].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     if 'contracts' in df.columns:
         df['contracts'] = pd.to_numeric(df['contracts'], errors='coerce')
     if 'province' in df.columns:
         df['province'] = df['province'].astype(str).str.strip().str.title()
     if 'internal_type' in df.columns:
         df['internal_type'] = df['internal_type'].astype(str).str.strip().str.lower()
-    if 'date' in df.columns:
-        df['year'] = df['date'].dt.year
-        df['month'] = df['date'].dt.month
-        df['year_month'] = df['date'].dt.to_period('M').astype(str)
+    
     df = df.drop_duplicates()
-    if 'date' in df.columns:
-        df = df[~df['date'].isna()]
-    if 'total' in df.columns:
-        df = df[~df['total'].isna()]
+    df = df[~df['date'].isna()] if 'date' in df.columns else df
+    df = df[~df['total'].isna()] if 'total' in df.columns else df
     return df
 
 df = normalize_df(df_raw)
@@ -178,20 +177,17 @@ col4.metric("Proveedores distintos", f"{dff['supplier'].nunique() if 'supplier' 
 # ---------- Visualizaciones ----------
 st.markdown("## Visualizaciones")
 
-# a) Total por tipo
 if 'internal_type' in dff.columns:
     agg_type = dff.groupby('internal_type')['total'].sum().reset_index().sort_values('total', ascending=False)
     fig1 = px.bar(agg_type, x='internal_type', y='total', title='Total de Montos por Tipo de Contratación')
     st.plotly_chart(fig1, use_container_width=True)
     st.markdown("**Interpretación:** Observa qué tipo concentra mayor gasto. (Explicar picos si conoces cambios regulatorios).")
 
-# b) Evolución mensual
 if 'date' in dff.columns:
     monthly = dff.groupby('year_month')['total'].sum().reset_index().sort_values('year_month')
     fig2 = px.line(monthly, x='year_month', y='total', title='Evolución Mensual de Montos Totales', markers=True)
     fig2.update_xaxes(tickangle=-45)
     st.plotly_chart(fig2, use_container_width=True)
-    # tendencia (anual)
     try:
         kpy = dff.groupby('year')['total'].sum().reset_index().sort_values('year')
         if len(kpy) >= 3:
@@ -206,32 +202,27 @@ if 'date' in dff.columns:
     except Exception as e:
         st.write("No fue posible calcular tendencia:", e)
 
-# c) Tipo x mes (barras apiladas)
 if {'internal_type','month','total'}.issubset(dff.columns):
     pivot = dff.groupby(['month','internal_type'])['total'].sum().reset_index()
     fig3 = px.bar(pivot, x='month', y='total', color='internal_type', title='Total por Tipo de Contratación por Mes', barmode='stack')
     st.plotly_chart(fig3, use_container_width=True)
 
-# d) Pie proporción de contratos por tipo
 if 'internal_type' in dff.columns:
     counts = dff['internal_type'].value_counts().reset_index()
     counts.columns = ['internal_type','count']
     fig4 = px.pie(counts, names='internal_type', values='count', title='Proporción de contratos por tipo')
     st.plotly_chart(fig4, use_container_width=True)
 
-# Scatter: total vs contracts
 if {'contracts','total'}.issubset(dff.columns):
     fig5 = px.scatter(dff, x='contracts', y='total', color='internal_type' if 'internal_type' in dff.columns else None,
                       title='Dispersión: Monto Total vs Cantidad de Contratos', trendline='ols')
     st.plotly_chart(fig5, use_container_width=True)
 
-# Heatmap año x mes
 if {'year','month','total'}.issubset(dff.columns):
     heat = dff.pivot_table(index='year', columns='month', values='total', aggfunc='sum', fill_value=0)
     fig6 = px.imshow(heat, labels=dict(x="Mes", y="Año", color="Total"), title='Heatmap Año × Mes (Total)')
     st.plotly_chart(fig6, use_container_width=True)
 
-# Correlaciones
 st.markdown("## Correlaciones con `total`")
 num_cols = dff.select_dtypes(include=[np.number]).columns.tolist()
 num_cols = [c for c in num_cols if c != 'total']
@@ -246,7 +237,6 @@ for c in num_cols:
 corr_df = pd.DataFrame(corr_out, columns=['variable','pearson_r','pearson_p','spearman_r','spearman_p']).sort_values('pearson_r', key=abs, ascending=False)
 st.dataframe(corr_df.style.format({'pearson_r':'{:.3f}','pearson_p':'{:.4f}','spearman_r':'{:.3f}','spearman_p':'{:.4f}'}))
 
-# Descarga CSV procesado
 csv = dff.to_csv(index=False).encode('utf-8')
 st.download_button("Descargar CSV filtrado / procesado", data=csv, file_name="compras_procesadas.csv", mime='text/csv')
 
@@ -256,4 +246,3 @@ st.markdown("""
 - Si observas picos anómalos en la serie temporal, investiga los `ocid` asociados.  
 - Las correlaciones reportadas son exploratorias; para afirmaciones causales requerirías más análisis y control de variables.
 """)
-
